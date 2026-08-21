@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodingAgent.Core/CodingAgent.Core.csproj" />
+    <Project Path="src/CodingAgent.Host/CodingAgent.Host.csproj" />
+    <Project Path="src/CodingAgent.Repositories/CodingAgent.Repositories.csproj" />
+    <Project Path="src/CodingAgent.Security/CodingAgent.Security.csproj" />
+    <Project Path="src/CodingAgent.Tools/CodingAgent.Tools.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodingAgent.Tests/CodingAgent.Tests.csproj" />
+  </Folder>
+</Solution>

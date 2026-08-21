@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+requiredVersions:
+  extensions:
+    azure.ai.agents: '>=1.0.0-beta.4'
+name: coding-agent
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-5.6-sol
+        model:
+          format: OpenAI
+          name: gpt-5.6-sol
+          version: '2026-07-09'
+        sku:
+          name: GlobalStandard
+          capacity: 10
+  coding-agent:
+    host: azure.ai.agent
+    project: .
+    language: docker
+    uses:
+      - ai-project
+    kind: hosted
+    name: coding-agent
+    displayName: C# Coding Agent
+    description: Coding agent for C# repositories hosted in GitHub and Azure DevOps.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    env:
+      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${MICROSOFT_FOUNDRY_MODEL_DEPLOYMENT_NAME}
+    startupCommand: dotnet CodingAgent.Host.dll
+    container:
+      resources:
+        cpu: '2'
+        memory: 4Gi
+infra:
+  provider: microsoft.foundry

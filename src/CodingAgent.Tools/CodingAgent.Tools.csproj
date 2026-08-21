@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../CodingAgent.Core/CodingAgent.Core.csproj" />
+    <ProjectReference Include="../CodingAgent.Repositories/CodingAgent.Repositories.csproj" />
+    <ProjectReference Include="../CodingAgent.Security/CodingAgent.Security.csproj" />
+  </ItemGroup>
+</Project>
