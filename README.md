@@ -1,6 +1,6 @@
 # Coding Agent
 
-A .NET 10 Microsoft Foundry Hosted Agent that works on C# repositories from GitHub and Azure DevOps. It can clone a repository into an isolated session workspace, inspect and edit files, create a local agent branch, run `dotnet restore/build/test`, and return the Git diff. Push and pull-request operations are intentionally excluded until an approval and identity layer is configured.
+A .NET 10 Microsoft Foundry Hosted Agent that works on C# repositories from GitHub and Azure DevOps. It can clone a repository into an isolated session workspace, inspect and edit files, create a local agent branch, run `dotnet restore/build/test`, and return the Git diff. After explicit human tool approval, it can commit, push an `agent/*` branch, and create a pull request. Direct pushes to `main` or any non-agent branch are rejected.
 
 See [the design](docs/DESIGN.md) for architecture, security boundaries, deployment, and the delivery roadmap.
 
@@ -47,3 +47,31 @@ To deploy a prebuilt image with the REST helper, pass environment-specific value
 ```
 
 `ModelDeployment` is the deployment name configured in the target Foundry resource, not the underlying model ID. Pass it explicitly even when the deployment name matches the model name.
+
+## Pull request credentials
+
+Pull request creation is an approval-required tool. Configure credentials as Microsoft Foundry project connections; never put tokens in source, image URLs, or Git configuration.
+
+For GitHub, create a `CustomKeys` connection with a secret field named `github_token`. Use a GitHub App installation token or a fine-grained token scoped to the target repositories with Contents and Pull requests read/write permissions. Deploy with:
+
+```powershell
+.\Deploy.ps1 `
+  -Image "<registry>.azurecr.io/coding-agent:<tag>" `
+  -ProjectEndpoint "https://<account>.services.ai.azure.com/api/projects/<project>" `
+  -ModelDeployment "<model-deployment-name>" `
+  -AgentName "<agent-name>" `
+  -GitHubConnectionName "<github-connection-name>"
+```
+
+For Azure DevOps, create a `CustomKeys` connection with a secret field named `ado_token`. A PAT requires Code read/write and uses the default `Basic` scheme. An Entra access token uses `-AzureDevOpsAuthScheme Bearer`.
+
+```powershell
+.\Deploy.ps1 `
+  -Image "<registry>.azurecr.io/coding-agent:<tag>" `
+  -ProjectEndpoint "https://<account>.services.ai.azure.com/api/projects/<project>" `
+  -ModelDeployment "<model-deployment-name>" `
+  -AgentName "<agent-name>" `
+  -AzureDevOpsConnectionName "<ado-connection-name>"
+```
+
+Provide both connection parameters when one Agent must publish to both providers. Public repository inspection works without these connections; publishing fails closed when the corresponding token isn't configured.

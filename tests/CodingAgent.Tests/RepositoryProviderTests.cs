@@ -20,6 +20,7 @@ public sealed class RepositoryProviderTests
         Assert.Equal(RepositoryProviderKind.GitHub, reference!.Provider);
         Assert.Equal("orders-api", reference.RepositoryName);
         Assert.Equal("develop", reference.Revision);
+        Assert.Equal("contoso", reference.Organization);
     }
 
     [Theory]
@@ -34,6 +35,8 @@ public sealed class RepositoryProviderTests
         Assert.True(parsed);
         Assert.Equal(RepositoryProviderKind.AzureDevOps, reference!.Provider);
         Assert.Equal("payment-service", reference.RepositoryName);
+        Assert.Equal("contoso", reference.Organization);
+        Assert.Equal("Commerce", reference.Project);
     }
 
     private sealed class StubProcessRunner : IProcessRunner

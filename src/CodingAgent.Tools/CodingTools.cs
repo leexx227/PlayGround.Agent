@@ -12,6 +12,7 @@ public sealed class CodingTools(
     IReadOnlyList<IRepositoryProvider> repositoryProviders)
 {
     private static readonly string[] IgnoredDirectories = [".git", "bin", "obj"];
+    private RepositoryReference? repositoryReference;
 
     [Description("Clone a GitHub or Azure DevOps repository into the isolated session workspace. Call this before other tools.")]
     public async Task<string> OpenRepositoryAsync(
@@ -20,6 +21,11 @@ public sealed class CodingTools(
         CancellationToken cancellationToken = default)
     {
         var uri = new Uri(repositoryUrl, UriKind.Absolute);
+        if (!GitBranchPolicy.IsValid(revision))
+        {
+            throw new ArgumentException("Revision must be a safe branch or tag name.", nameof(revision));
+        }
+
         var provider = repositoryProviders.FirstOrDefault(candidate => candidate.TryParse(uri, revision, out _))
             ?? throw new ArgumentException("Only canonical HTTPS GitHub and Azure DevOps repository URLs are supported.", nameof(repositoryUrl));
         provider.TryParse(uri, revision, out var reference);
@@ -30,6 +36,7 @@ public sealed class CodingTools(
         }
 
         await provider.CloneAsync(reference!, paths.WorkspaceRoot, cancellationToken);
+        repositoryReference = reference;
         return $"Opened {reference!.Provider} repository {reference.RepositoryName} at {revision}.";
     }
 
@@ -113,7 +120,7 @@ public sealed class CodingTools(
         CancellationToken cancellationToken = default)
     {
         EnsureRepositoryIsOpen();
-        if (!branchName.StartsWith("agent/", StringComparison.Ordinal) || branchName.Any(char.IsWhiteSpace))
+        if (!GitBranchPolicy.IsAgentBranch(branchName))
         {
             throw new ArgumentException("Agent branches must start with 'agent/' and contain no whitespace.", nameof(branchName));
         }
@@ -146,8 +153,72 @@ public sealed class CodingTools(
             return $"{FormatValidation("restore", restore)}\n{FormatValidation("build", build)}";
         }
 
-        var test = await RunAsync("dotnet", ["test", resolved, "--no-build", "--configuration", "Release", "--logger", "trx"], TimeSpan.FromMinutes(10), cancellationToken);
+        var resultsDirectory = Path.Combine(Path.GetTempPath(), "coding-agent-test-results", Guid.NewGuid().ToString("N"));
+        var test = await RunAsync(
+            "dotnet",
+            ["test", resolved, "--no-build", "--configuration", "Release", "--logger", "trx", "--results-directory", resultsDirectory],
+            TimeSpan.FromMinutes(10),
+            cancellationToken);
         return $"{FormatValidation("restore", restore)}\n{FormatValidation("build", build)}\n{FormatValidation("test", test)}";
+    }
+
+    [Description("Validate, commit, push an agent/* branch, and create a GitHub or Azure DevOps pull request. Call only when the user explicitly asks to create a pull request.")]
+    public async Task<string> CreatePullRequestAsync(
+        [Description("Workspace-relative .sln, .slnx, or .csproj to validate before publishing")] string validationTarget,
+        [Description("Concise pull request title and commit subject")] string title,
+        [Description("Pull request description including summary and tests")] string description,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureRepositoryIsOpen();
+        var reference = repositoryReference
+            ?? throw new InvalidOperationException("Repository metadata is unavailable. Open the repository again before creating a pull request.");
+        ValidatePullRequestText(title, description);
+
+        var branchResult = await RunAsync("git", ["branch", "--show-current"], TimeSpan.FromSeconds(30), cancellationToken);
+        EnsureSucceeded(branchResult, "Current branch lookup");
+        var sourceBranch = branchResult.StandardOutput.Trim();
+        if (!GitBranchPolicy.IsAgentBranch(sourceBranch))
+        {
+            throw new InvalidOperationException("Pull requests can only be published from an agent/* branch.");
+        }
+
+        if (sourceBranch.Equals(reference.Revision, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The source and target branches must be different.");
+        }
+
+        var validation = await ValidateDotNetAsync(validationTarget, cancellationToken);
+        if (validation.Contains("FAILED", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Pull request creation stopped because validation failed.\n{validation}");
+        }
+
+        var add = await RunAsync("git", ["add", "--all"], TimeSpan.FromSeconds(30), cancellationToken);
+        EnsureSucceeded(add, "Staging changes");
+        var staged = await RunAsync("git", ["diff", "--cached", "--quiet"], TimeSpan.FromSeconds(30), cancellationToken);
+        if (staged.ExitCode == 0)
+        {
+            throw new InvalidOperationException("There are no changes to publish.");
+        }
+
+        if (staged.ExitCode != 1 || staged.TimedOut)
+        {
+            EnsureSucceeded(staged, "Staged change check");
+        }
+
+        var commit = await RunAsync(
+            "git",
+            ["-c", "user.name=Microsoft Foundry Coding Agent", "-c", "user.email=coding-agent@users.noreply.github.com", "commit", "-m", title],
+            TimeSpan.FromMinutes(2),
+            cancellationToken);
+        EnsureSucceeded(commit, "Commit");
+
+        var provider = repositoryProviders.Single(candidate => candidate.Kind == reference.Provider);
+        var pullRequest = await provider.PublishPullRequestAsync(
+            new PullRequestRequest(reference, paths.WorkspaceRoot, sourceBranch, reference.Revision, title, description),
+            cancellationToken);
+
+        return $"Created {reference.Provider} pull request {pullRequest.Id}: {pullRequest.Url}\n\n{validation}";
     }
 
     private IEnumerable<string> EnumerateWorkspaceFiles(string? suffix) =>
@@ -183,6 +254,19 @@ public sealed class CodingTools(
         if (!Directory.Exists(path))
         {
             throw new DirectoryNotFoundException(path);
+        }
+    }
+
+    private static void ValidatePullRequestText(string title, string description)
+    {
+        if (string.IsNullOrWhiteSpace(title) || title.Length > 200 || title.Contains('\n') || title.Contains('\r'))
+        {
+            throw new ArgumentException("The pull request title must be a single non-empty line of at most 200 characters.", nameof(title));
+        }
+
+        if (string.IsNullOrWhiteSpace(description) || description.Length > 20_000)
+        {
+            throw new ArgumentException("The pull request description must be non-empty and at most 20,000 characters.", nameof(description));
         }
     }
 }

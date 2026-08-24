@@ -13,7 +13,16 @@ param(
 
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
-    [string]$AgentName
+    [string]$AgentName,
+
+    [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]*$')]
+    [string]$GitHubConnectionName,
+
+    [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]*$')]
+    [string]$AzureDevOpsConnectionName,
+
+    [ValidateSet("Basic", "Bearer")]
+    [string]$AzureDevOpsAuthScheme = "Basic"
 )
 
 Set-StrictMode -Version Latest
@@ -119,4 +128,13 @@ for ($Attempt = 1; $Attempt -le 60; $Attempt++) {
     }
 
     Start-Sleep -Seconds 5
+}
+
+if (-not [string]::IsNullOrWhiteSpace($GitHubConnectionName)) {
+    $Definition.environment_variables.GITHUB_TOKEN = '$' + "{{connections.$GitHubConnectionName.credentials.github_token}}"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($AzureDevOpsConnectionName)) {
+    $Definition.environment_variables.AZURE_DEVOPS_TOKEN = '$' + "{{connections.$AzureDevOpsConnectionName.credentials.ado_token}}"
+    $Definition.environment_variables.AZURE_DEVOPS_AUTH_SCHEME = $AzureDevOpsAuthScheme
 }

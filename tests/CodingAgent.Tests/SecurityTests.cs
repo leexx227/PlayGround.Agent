@@ -54,7 +54,6 @@ public sealed class SecurityTests
     }
 
     [Theory]
-    [InlineData("git", "push")]
     [InlineData("git", "--force")]
     [InlineData("powershell", "Get-ChildItem")]
     public void CommandPolicy_RejectsDangerousCommands(string executable, string argument)
@@ -62,5 +61,27 @@ public sealed class SecurityTests
         var policy = new CommandPolicy();
 
         Assert.Throws<UnauthorizedAccessException>(() => policy.EnsureAllowed(executable, [argument]));
+    }
+
+    [Fact]
+    public void CommandPolicy_AllowsAgentBranchPush()
+    {
+        var policy = new CommandPolicy();
+
+        policy.EnsureAllowed("git", ["push", "origin", "--set-upstream", "HEAD:refs/heads/agent/add-tests"]);
+    }
+
+    [Theory]
+    [InlineData("HEAD:refs/heads/main")]
+    [InlineData("HEAD:refs/heads/feature/not-agent")]
+    [InlineData("HEAD:refs/heads/agent/bad branch")]
+    [InlineData("HEAD:refs/heads/agent/../main")]
+    [InlineData("HEAD:refs/heads/agent//main")]
+    public void CommandPolicy_RejectsUnsafePushTarget(string refspec)
+    {
+        var policy = new CommandPolicy();
+
+        Assert.Throws<UnauthorizedAccessException>(() =>
+            policy.EnsureAllowed("git", ["push", "origin", "--set-upstream", refspec]));
     }
 }

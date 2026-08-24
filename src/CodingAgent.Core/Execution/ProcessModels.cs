@@ -4,7 +4,8 @@ public sealed record ProcessRequest(
     string FileName,
     IReadOnlyList<string> Arguments,
     string WorkingDirectory,
-    TimeSpan Timeout);
+    TimeSpan Timeout,
+    IReadOnlyDictionary<string, string>? EnvironmentVariables = null);
 
 public sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError, bool TimedOut)
 {

@@ -26,6 +26,14 @@ public sealed class RestrictedProcessRunner(CommandPolicy policy) : IProcessRunn
             startInfo.ArgumentList.Add(argument);
         }
 
+        if (request.EnvironmentVariables is not null)
+        {
+            foreach (var variable in request.EnvironmentVariables)
+            {
+                startInfo.Environment[variable.Key] = variable.Value;
+            }
+        }
+
         using var process = new Process { StartInfo = startInfo };
         process.Start();
         var standardOutput = ReadBoundedAsync(process.StandardOutput, cancellationToken);

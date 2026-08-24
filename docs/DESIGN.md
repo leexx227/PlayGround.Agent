@@ -2,9 +2,7 @@
 
 ## 1. Purpose
 
-This repository contains a production-oriented coding agent implemented in C# and intended for deployment to Microsoft Foundry Agent Service as a Hosted Agent. The agent accepts natural-language engineering tasks, opens a GitHub or Azure DevOps repository, changes C# code, adds tests, runs restore/build/test, and presents the resulting diff and validation report for review.
-
-The initial release deliberately stops before push or pull-request creation. Those operations require an explicit approval channel and user-scoped repository identity. Local changes, builds, and tests are autonomous; external side effects are not.
+This repository contains a production-oriented coding agent implemented in C# and intended for deployment to Microsoft Foundry Agent Service as a Hosted Agent. The agent accepts natural-language engineering tasks, opens a GitHub or Azure DevOps repository, changes C# code, adds tests, runs restore/build/test, and presents the resulting diff and validation report for review. With explicit human tool approval, it can publish an `agent/*` branch and create a pull request.
 
 ## 2. User Experience
 
@@ -14,7 +12,7 @@ A typical request is:
 
 > Open https://github.com/contoso/orders-api at main. Add an optional cancellation reason to the cancel endpoint, add xUnit tests, and run the Release build. Do not push.
 
-The agent returns the files changed, unified diff, restore/build/test results, and any remaining risks. A later production UI will add explicit Approve and Create Pull Request actions.
+The agent returns the files changed, unified diff, restore/build/test results, and any remaining risks. When the user requests a pull request, the framework returns an approval request containing the proposed tool arguments. No commit or remote write occurs until the caller approves it.
 
 ## 3. Architecture
 
@@ -57,11 +55,11 @@ Contains provider-neutral repository models and contracts. Repository URLs are n
 
 ### CodingAgent.Repositories
 
-Recognizes GitHub and Azure DevOps URL formats and clones through a parameterized Git process. Credentials are never embedded in clone URLs. Private repository authentication must be supplied by a platform credential helper in the production environment.
+Recognizes GitHub and Azure DevOps URL formats, clones through a parameterized Git process, and publishes pull requests through provider REST APIs. Credentials are injected from Foundry project connections into child-process environment variables and HTTP authorization headers; they are never embedded in clone URLs, command arguments, logs, or Git configuration files.
 
 ### CodingAgent.Tools
 
-Exposes narrowly scoped agent tools for repository initialization, file listing, file reading, text search, file writing, Git diff/status, branch creation, and .NET validation.
+Exposes narrowly scoped agent tools for repository initialization, file listing, file reading, text search, file writing, Git diff/status, branch creation, .NET validation, and approval-gated pull request creation.
 
 ### CodingAgent.Security
 
@@ -71,7 +69,8 @@ Constrains every path to the session workspace and every process to an executabl
 
 ```text
 INTAKE -> OPEN_REPOSITORY -> INSPECT -> PLAN -> MODIFY
-       -> VALIDATE -> REPAIR (bounded) -> REVIEW_DIFF -> COMPLETE
+    -> VALIDATE -> REPAIR (bounded) -> REVIEW_DIFF
+    -> HUMAN_APPROVAL -> COMMIT -> PUSH_AGENT_BRANCH -> CREATE_PR
 ```
 
 The system instructions require the agent to inspect before editing, keep changes focused, add or update tests, validate the narrowest relevant scope, and report failures honestly. A repair loop is limited to avoid uncontrolled token and compute consumption.
@@ -84,7 +83,7 @@ The system supports these canonical URL families:
 - Azure DevOps: `https://dev.azure.com/{organization}/{project}/_git/{repository}`
 - Azure DevOps legacy: `https://{organization}.visualstudio.com/{project}/_git/{repository}`
 
-Both providers implement the same `IRepositoryProvider` contract. GitHub production authentication uses a GitHub App installation token. Azure DevOps production authentication uses Microsoft Entra On-Behalf-Of for interactive requests and a dedicated workload identity for approved background automation.
+Both providers implement the same `IRepositoryProvider` contract. GitHub authentication uses `GITHUB_TOKEN`, supplied through a Foundry connection; short-lived GitHub App installation tokens are preferred. Azure DevOps authentication uses `AZURE_DEVOPS_TOKEN`, with Basic authentication for PATs or Bearer authentication for Entra tokens. Production interactive scenarios should replace static tokens with user-scoped OAuth/OBO issuance.
 
 ## 8. C# Project Support
 
@@ -106,7 +105,9 @@ dotnet test <target> --no-build --configuration Release --logger trx
 - Processes are started directly with argument lists, never through a shell.
 - Only `git` and `dotnet` are allowed in the MVP.
 - Force push, protected-branch mutation, credential output, and access outside the workspace are forbidden.
-- Push and pull-request creation require a separate approval operation and are not model-callable in the MVP.
+- Pull-request publication is wrapped in `ApprovalRequiredAIFunction`; the model can propose it but the function cannot execute before the caller approves it.
+- The only allowed push refspec is the current `HEAD` to `refs/heads/agent/*`; direct pushes to `main`, force pushes, malformed refs, and arbitrary remotes are rejected.
+- Pull-request publication reruns restore, Release build, and tests before staging or committing changes.
 - Secrets belong in managed connections or Key Vault, never images, prompts, logs, or repository configuration.
 
 ## 10. Deployment
@@ -121,12 +122,12 @@ Unit tests cover URL recognition, path confinement, command policy, and workspac
 
 ## 12. Delivery Phases
 
-1. Hosted C# Agent, function tools, local workspace, GitHub/ADO clone, and .NET validation.
-2. GitHub App and Azure DevOps OBO authentication with an approval service.
+1. Hosted C# Agent, function tools, local workspace, GitHub/ADO clone, .NET validation, and approval-gated pull requests.
+2. Automated GitHub App token issuance and Azure DevOps OBO authentication.
 3. Isolated ephemeral build runner, artifact storage, cancellation, and durable checkpoints.
 4. Web workbench with chat, diff, logs, Approve Push, and Create Pull Request actions.
 5. VNet hardening, evaluation gates, monitoring, quotas, and production rollout.
 
 ## 13. MVP Acceptance Criteria
 
-The deployed agent can open a public GitHub or Azure DevOps C# repository, inspect and modify files under its session workspace, add tests, execute bounded `dotnet` validation, and return a diff and results without pushing changes. Private repositories become production-ready only after their identity integrations and approval path are configured.
+The deployed agent can open a GitHub or Azure DevOps C# repository, inspect and modify files under its session workspace, add tests, execute bounded `dotnet` validation, and return a diff and results. With a configured provider connection and explicit human approval, it can commit and push only an `agent/*` branch and create a pull request against the originally opened branch.
