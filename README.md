@@ -42,7 +42,8 @@ To deploy a prebuilt image with the REST helper, pass environment-specific value
 .\Deploy.ps1 `
   -Image "<registry>.azurecr.io/coding-agent:<tag>" `
   -ProjectEndpoint "https://<account>.services.ai.azure.com/api/projects/<project>" `
+  -ModelDeployment "<model-deployment-name>" `
   -AgentName "<agent-name>"
 ```
 
-The model deployment defaults to `gpt-5.6-sol`, the quality-first GPT-5.6 model for advanced coding and agentic workflows. Override it with `-ModelDeployment` when the target project uses a different deployment name.
+`ModelDeployment` is the deployment name configured in the target Foundry resource, not the underlying model ID. Pass it explicitly even when the deployment name matches the model name.

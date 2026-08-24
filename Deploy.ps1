@@ -7,8 +7,9 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$ProjectEndpoint,
 
+    [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
-    [string]$ModelDeployment = "gpt-5.6-sol",
+    [string]$ModelDeployment,
 
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
