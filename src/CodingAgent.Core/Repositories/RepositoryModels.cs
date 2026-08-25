@@ -14,16 +14,6 @@ public sealed record RepositoryReference(
     string? Organization = null,
     string? Project = null);
 
-public sealed record PullRequestRequest(
-    RepositoryReference Repository,
-    string Workspace,
-    string SourceBranch,
-    string TargetBranch,
-    string Title,
-    string Description);
-
-public sealed record PullRequestResult(Uri Url, string Id);
-
 public interface IRepositoryProvider
 {
     RepositoryProviderKind Kind { get; }
@@ -32,5 +22,5 @@ public interface IRepositoryProvider
 
     Task CloneAsync(RepositoryReference reference, string destination, CancellationToken cancellationToken);
 
-    Task<PullRequestResult> PublishPullRequestAsync(PullRequestRequest request, CancellationToken cancellationToken);
+    Task PushBranchAsync(string workspace, string sourceBranch, CancellationToken cancellationToken);
 }

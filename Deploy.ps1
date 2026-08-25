@@ -15,6 +15,11 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$AgentName,
 
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]*$')]
+    [string]$ToolboxName,
+
     [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]*$')]
     [string]$GitHubConnectionName,
 
@@ -59,8 +64,9 @@ $Definition = @{
                 }
         )
         environment_variables = @{
-                AZURE_AI_MODEL_DEPLOYMENT_NAME = $ModelDeployment
-    }
+            AZURE_AI_MODEL_DEPLOYMENT_NAME = $ModelDeployment
+            TOOLBOX_NAME = $ToolboxName
+        }
 }
 
 $AgentStatusCode = 0

@@ -162,17 +162,16 @@ public sealed class CodingTools(
         return $"{FormatValidation("restore", restore)}\n{FormatValidation("build", build)}\n{FormatValidation("test", test)}";
     }
 
-    [Description("Validate, commit, push an agent/* branch, and create a GitHub or Azure DevOps pull request. Call only when the user explicitly asks to create a pull request.")]
-    public async Task<string> CreatePullRequestAsync(
+    [Description("Validate, commit, and push the current agent/* branch. Call only when the user explicitly approves publishing changes, then use the Foundry Toolbox to create the pull request.")]
+    public async Task<string> PublishBranchAsync(
         [Description("Workspace-relative .sln, .slnx, or .csproj to validate before publishing")] string validationTarget,
-        [Description("Concise pull request title and commit subject")] string title,
-        [Description("Pull request description including summary and tests")] string description,
+        [Description("Concise commit subject")] string commitMessage,
         CancellationToken cancellationToken = default)
     {
         EnsureRepositoryIsOpen();
         var reference = repositoryReference
             ?? throw new InvalidOperationException("Repository metadata is unavailable. Open the repository again before creating a pull request.");
-        ValidatePullRequestText(title, description);
+        ValidateCommitMessage(commitMessage);
 
         var branchResult = await RunAsync("git", ["branch", "--show-current"], TimeSpan.FromSeconds(30), cancellationToken);
         EnsureSucceeded(branchResult, "Current branch lookup");
@@ -190,7 +189,7 @@ public sealed class CodingTools(
         var validation = await ValidateDotNetAsync(validationTarget, cancellationToken);
         if (validation.Contains("FAILED", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Pull request creation stopped because validation failed.\n{validation}");
+            throw new InvalidOperationException($"Branch publication stopped because validation failed.\n{validation}");
         }
 
         var add = await RunAsync("git", ["add", "--all"], TimeSpan.FromSeconds(30), cancellationToken);
@@ -208,17 +207,15 @@ public sealed class CodingTools(
 
         var commit = await RunAsync(
             "git",
-            ["-c", "user.name=Microsoft Foundry Coding Agent", "-c", "user.email=coding-agent@users.noreply.github.com", "commit", "-m", title],
+            ["-c", "user.name=Microsoft Foundry Coding Agent", "-c", "user.email=coding-agent@users.noreply.github.com", "commit", "-m", commitMessage],
             TimeSpan.FromMinutes(2),
             cancellationToken);
         EnsureSucceeded(commit, "Commit");
 
         var provider = repositoryProviders.Single(candidate => candidate.Kind == reference.Provider);
-        var pullRequest = await provider.PublishPullRequestAsync(
-            new PullRequestRequest(reference, paths.WorkspaceRoot, sourceBranch, reference.Revision, title, description),
-            cancellationToken);
+        await provider.PushBranchAsync(paths.WorkspaceRoot, sourceBranch, cancellationToken);
 
-        return $"Created {reference.Provider} pull request {pullRequest.Id}: {pullRequest.Url}\n\n{validation}";
+        return $"Published {sourceBranch} to {reference.Provider}. Use the Foundry Toolbox repository tool to create a pull request targeting {reference.Revision}.\n\n{validation}";
     }
 
     private IEnumerable<string> EnumerateWorkspaceFiles(string? suffix) =>
@@ -257,16 +254,11 @@ public sealed class CodingTools(
         }
     }
 
-    private static void ValidatePullRequestText(string title, string description)
+    private static void ValidateCommitMessage(string commitMessage)
     {
-        if (string.IsNullOrWhiteSpace(title) || title.Length > 200 || title.Contains('\n') || title.Contains('\r'))
+        if (string.IsNullOrWhiteSpace(commitMessage) || commitMessage.Length > 200 || commitMessage.Contains('\n') || commitMessage.Contains('\r'))
         {
-            throw new ArgumentException("The pull request title must be a single non-empty line of at most 200 characters.", nameof(title));
-        }
-
-        if (string.IsNullOrWhiteSpace(description) || description.Length > 20_000)
-        {
-            throw new ArgumentException("The pull request description must be non-empty and at most 20,000 characters.", nameof(description));
+            throw new ArgumentException("The commit message must be a single non-empty line of at most 200 characters.", nameof(commitMessage));
         }
     }
 }

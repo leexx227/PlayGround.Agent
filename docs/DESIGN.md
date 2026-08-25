@@ -55,11 +55,11 @@ Contains provider-neutral repository models and contracts. Repository URLs are n
 
 ### CodingAgent.Repositories
 
-Recognizes GitHub and Azure DevOps URL formats, clones through a parameterized Git process, and publishes pull requests through provider REST APIs. Credentials are injected from Foundry project connections into child-process environment variables and HTTP authorization headers; they are never embedded in clone URLs, command arguments, logs, or Git configuration files.
+Recognizes GitHub and Azure DevOps URL formats and uses a parameterized Git process to clone and push the Agent's local workspace. Credentials are injected from Foundry project connections into child-process environment variables; they are never embedded in clone URLs, command arguments, logs, or Git configuration files. Remote collaboration operations such as pull-request creation are supplied by GitHub and Azure DevOps MCP tools through a Foundry Toolbox.
 
 ### CodingAgent.Tools
 
-Exposes narrowly scoped agent tools for repository initialization, file listing, file reading, text search, file writing, Git diff/status, branch creation, .NET validation, and approval-gated pull request creation.
+Exposes narrowly scoped agent tools for repository initialization, file listing, file reading, text search, file writing, Git diff/status, branch creation, .NET validation, and approval-gated publication of an `agent/*` branch.
 
 ### CodingAgent.Security
 
@@ -70,7 +70,8 @@ Constrains every path to the session workspace and every process to an executabl
 ```text
 INTAKE -> OPEN_REPOSITORY -> INSPECT -> PLAN -> MODIFY
     -> VALIDATE -> REPAIR (bounded) -> REVIEW_DIFF
-    -> HUMAN_APPROVAL -> COMMIT -> PUSH_AGENT_BRANCH -> CREATE_PR
+    -> HUMAN_APPROVAL -> COMMIT -> PUSH_AGENT_BRANCH
+    -> TOOLBOX_MCP_APPROVAL -> CREATE_PR
 ```
 
 The system instructions require the agent to inspect before editing, keep changes focused, add or update tests, validate the narrowest relevant scope, and report failures honestly. A repair loop is limited to avoid uncontrolled token and compute consumption.
@@ -83,7 +84,9 @@ The system supports these canonical URL families:
 - Azure DevOps: `https://dev.azure.com/{organization}/{project}/_git/{repository}`
 - Azure DevOps legacy: `https://{organization}.visualstudio.com/{project}/_git/{repository}`
 
-Both providers implement the same `IRepositoryProvider` contract. GitHub authentication uses `GITHUB_TOKEN`, supplied through a Foundry connection; short-lived GitHub App installation tokens are preferred. Azure DevOps authentication uses `AZURE_DEVOPS_TOKEN`, with Basic authentication for PATs or Bearer authentication for Entra tokens. Production interactive scenarios should replace static tokens with user-scoped OAuth/OBO issuance.
+Both providers implement the same `IRepositoryProvider` contract for local workspace synchronization. GitHub authentication uses `GITHUB_TOKEN`, supplied through a Foundry connection; short-lived GitHub App installation tokens are preferred. Azure DevOps authentication uses `AZURE_DEVOPS_TOKEN`, with Basic authentication for PATs or Bearer authentication for Entra tokens. The Foundry Toolbox separately authenticates its remote MCP tools, typically with OAuth identity passthrough.
+
+Remote MCP servers cannot access the Hosted Agent's local filesystem. Azure DevOps MCP exposes repository reads, branch creation, and pull-request operations, but it doesn't expose file-write or commit tools. Consequently MCP can't replace local Git clone/push while preserving full-repository builds and tests across both providers.
 
 ## 8. C# Project Support
 
@@ -105,9 +108,10 @@ dotnet test <target> --no-build --configuration Release --logger trx
 - Processes are started directly with argument lists, never through a shell.
 - Only `git` and `dotnet` are allowed in the MVP.
 - Force push, protected-branch mutation, credential output, and access outside the workspace are forbidden.
-- Pull-request publication is wrapped in `ApprovalRequiredAIFunction`; the model can propose it but the function cannot execute before the caller approves it.
+- Local branch publication is wrapped in `ApprovalRequiredAIFunction`; the model can propose it but commit and push cannot execute before the caller approves it.
+- Toolbox write tools must be configured with `require_approval: always`, and the Hosted Agent runtime must preserve that approval requirement.
 - The only allowed push refspec is the current `HEAD` to `refs/heads/agent/*`; direct pushes to `main`, force pushes, malformed refs, and arbitrary remotes are rejected.
-- Pull-request publication reruns restore, Release build, and tests before staging or committing changes.
+- Branch publication reruns restore, Release build, and tests before staging or committing changes.
 - Secrets belong in managed connections or Key Vault, never images, prompts, logs, or repository configuration.
 
 ## 10. Deployment
@@ -122,7 +126,7 @@ Unit tests cover URL recognition, path confinement, command policy, and workspac
 
 ## 12. Delivery Phases
 
-1. Hosted C# Agent, function tools, local workspace, GitHub/ADO clone, .NET validation, and approval-gated pull requests.
+1. Hosted C# Agent, function tools, local workspace, GitHub/ADO clone and push, .NET validation, and approval-gated Toolbox pull requests.
 2. Automated GitHub App token issuance and Azure DevOps OBO authentication.
 3. Isolated ephemeral build runner, artifact storage, cancellation, and durable checkpoints.
 4. Web workbench with chat, diff, logs, Approve Push, and Create Pull Request actions.
