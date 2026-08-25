@@ -69,6 +69,15 @@ $Definition = @{
         }
 }
 
+if (-not [string]::IsNullOrWhiteSpace($GitHubConnectionName)) {
+    $Definition.environment_variables.GITHUB_TOKEN = '$' + "{{connections.$GitHubConnectionName.credentials.github_token}}"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($AzureDevOpsConnectionName)) {
+    $Definition.environment_variables.AZURE_DEVOPS_TOKEN = '$' + "{{connections.$AzureDevOpsConnectionName.credentials.ado_token}}"
+    $Definition.environment_variables.AZURE_DEVOPS_AUTH_SCHEME = $AzureDevOpsAuthScheme
+}
+
 $AgentStatusCode = 0
 $AgentLookup = Invoke-RestMethod `
     -Method Get `
@@ -134,13 +143,4 @@ for ($Attempt = 1; $Attempt -le 60; $Attempt++) {
     }
 
     Start-Sleep -Seconds 5
-}
-
-if (-not [string]::IsNullOrWhiteSpace($GitHubConnectionName)) {
-    $Definition.environment_variables.GITHUB_TOKEN = '$' + "{{connections.$GitHubConnectionName.credentials.github_token}}"
-}
-
-if (-not [string]::IsNullOrWhiteSpace($AzureDevOpsConnectionName)) {
-    $Definition.environment_variables.AZURE_DEVOPS_TOKEN = '$' + "{{connections.$AzureDevOpsConnectionName.credentials.ado_token}}"
-    $Definition.environment_variables.AZURE_DEVOPS_AUTH_SCHEME = $AzureDevOpsAuthScheme
 }
